@@ -25,16 +25,17 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "SEGGER_SYSVIEW.h"
+#include "queue.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+typedef enum {ALL_OFF, RED_ON, RED_OFF, BLUE_ON, BLUE_OFF, GREEN_ON, GREEN_OFF, ALL_ON} LED_CMD;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define STACK_SIZE	128
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -45,14 +46,15 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+static QueueHandle_t LedCmdQueue = NULL;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 void MX_FREERTOS_Init(void);
 /* USER CODE BEGIN PFP */
-
+void sendTask(void *arg);
+void receiveTask(void *arg);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -67,7 +69,8 @@ void MX_FREERTOS_Init(void);
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-
+  LedCmdQueue = xQueueCreate(16, sizeof(uint8_t));
+  assert_param(LedCmdQueue != NULL);
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -90,6 +93,8 @@ int main(void)
   MX_GPIO_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
+  xTaskCreate(sendTask, "sendTask", STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL);
+  xTaskCreate(receiveTask, "receiveTask", STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL);
 
   /* USER CODE END 2 */
 
@@ -166,7 +171,70 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+void receiveTask(void *arg)
+{
+	uint8_t nextCmd = 0;
 
+	while(1)
+	{
+		if(xQueueReceive(LedCmdQueue, &nextCmd, portMAX_DELAY) == pdTRUE)
+		{
+			switch (nextCmd)
+			{
+				case ALL_OFF:
+					HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, GPIO_PIN_RESET);
+					HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
+					HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_RESET);
+					break;
+
+				case GREEN_ON:
+					HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, GPIO_PIN_SET);
+					break;
+
+				case GREEN_OFF:
+					HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, GPIO_PIN_RESET);
+					break;
+
+				case BLUE_ON:
+					HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
+					break;
+
+				case BLUE_OFF:
+					HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
+					break;
+
+				case RED_ON:
+					HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_SET);
+					break;
+
+				case RED_OFF:
+					HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_RESET);
+					break;
+
+				case ALL_ON:
+					HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, GPIO_PIN_SET);
+					HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
+					HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_SET);
+				default:
+					break;
+			}
+		}
+	}
+}
+
+void sendTask(void *arg)
+{
+	while(1)
+	{
+		for(uint8_t i = 0; i < 8; i++)
+		{
+			uint8_t ledCmd = (LED_CMD) i;
+			xQueueSend(LedCmdQueue, &ledCmd, portMAX_DELAY);
+
+			vTaskDelay(200/portTICK_PERIOD_MS);
+		}
+	}
+}
 /* USER CODE END 4 */
 
 /**
@@ -197,6 +265,10 @@ void assert_failed(uint8_t *file, uint32_t line)
   /* USER CODE BEGIN 6 */
   /* User can add his own implementation to report the file name and line number,
      ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+	while(1)
+	{
+
+	}
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
