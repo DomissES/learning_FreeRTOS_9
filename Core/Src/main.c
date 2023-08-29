@@ -32,18 +32,25 @@
 /* USER CODE BEGIN PTD */
 typedef enum {ALL_OFF, RED_ON, RED_OFF, BLUE_ON, BLUE_OFF, GREEN_ON, GREEN_OFF, ALL_ON} LED_CMD;
 
+
+#define MAX_MSG_LEN		256
 typedef struct
 {
-	uint8_t greenLedState:	1;
-	uint8_t blueLedState:	1;
-	uint8_t redLedState:	1;
+	uint32_t greenLedState:		1;
+	uint32_t blueLedState:		1;
+	uint32_t redLedState:		1;
 	uint32_t msDelayTime;
+	char message[MAX_MSG_LEN];
 }LedStates_t;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define STACK_SIZE	128
+
+#define GREEN_LED_MASK		0x0001
+#define BLUE_LED_MASK		0x0002
+#define RED_LED_MASK		0x0004
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -55,6 +62,7 @@ typedef struct
 
 /* USER CODE BEGIN PV */
 static QueueHandle_t LedCmdQueue = NULL;
+static xTaskHandle receiveTaskHandle = NULL;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -102,7 +110,9 @@ int main(void)
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
   xTaskCreate(sendTask, "sendTask", STACK_SIZE, NULL, configMAX_PRIORITIES - 1, NULL);
-  xTaskCreate(receiveTask, "receiveTask", STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL);
+  uint8_t retVal = xTaskCreate(receiveTask, "receiveTask", STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, &receiveTaskHandle);
+  assert_param(retVal ==pdPASS);
+  assert_param(receiveTaskHandle != NULL);
 
   /* USER CODE END 2 */
 
@@ -185,25 +195,24 @@ void receiveTask(void *arg)
 
 	while(1)
 	{
-		if(xQueueReceive(LedCmdQueue, &nextCmd, portMAX_DELAY) == pdTRUE)
-		{
-			if(nextCmd.greenLedState == 1)
-				HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, GPIO_PIN_SET);
-			else
-				HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, GPIO_PIN_RESET);
+		uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
-			if(nextCmd.blueLedState == 1)
-				HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
-			else
-				HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
+		if((notificationValue & RED_LED_MASK) != 0)
+			HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_SET);
+		else
+			HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_RESET);
 
-			if(nextCmd.redLedState == 1)
-				HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_SET);
-			else
-				HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_RESET);
-		}
+		if((notificationValue & BLUE_LED_MASK) != 0)
+			HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
+		else
+			HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
 
-		vTaskDelay(nextCmd.msDelayTime/portTICK_PERIOD_MS);
+		if((notificationValue & GREEN_LED_MASK) != 0)
+			HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, GPIO_PIN_SET);
+		else
+			HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, GPIO_PIN_RESET);
+
+
 	}
 }
 
@@ -213,17 +222,14 @@ void sendTask(void *arg)
 
 	while(1)
 	{
-		nextState = (LedStates_t){1, 1, 1, 100};
-		xQueueSend(LedCmdQueue, &nextState, portMAX_DELAY);
+		xTaskNotify(receiveTaskHandle, RED_LED_MASK, eSetValueWithOverwrite);
+		vTaskDelay(200/portTICK_PERIOD_MS);
 
-		nextState = (LedStates_t){1, 0, 1, 900};
-		xQueueSend(LedCmdQueue, &nextState, portMAX_DELAY);
+		xTaskNotify(receiveTaskHandle, BLUE_LED_MASK, eSetValueWithOverwrite);
+		vTaskDelay(200/portTICK_PERIOD_MS);
 
-		nextState = (LedStates_t){0, 0, 1, 200};
-		xQueueSend(LedCmdQueue, &nextState, portMAX_DELAY);
-
-		nextState = (LedStates_t){0, 0, 0, 256};
-		xQueueSend(LedCmdQueue, &nextState, portMAX_DELAY);
+		xTaskNotify(receiveTaskHandle, GREEN_LED_MASK, eSetValueWithOverwrite);
+		vTaskDelay(200/portTICK_PERIOD_MS);
 	}
 }
 /* USER CODE END 4 */
